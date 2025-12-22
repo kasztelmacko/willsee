@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
-from pbn.facet_pbn.facet_pbn import FacetPBN
-
-
-Palette = dict[int, tuple[int, int, int]]
+from pbn.canvas.facet_pbn import FacetPBN
+from pbn.canvas.palette_pbn import PalettePBN
 
 
 @dataclass(frozen=True)
@@ -16,32 +14,48 @@ class CanvasPBN:
     width: int
     rgb_img: np.ndarray
     labels_img: np.ndarray
-    facets: dict[int, FacetPBN]
-    palette: Palette
+    facets: dict[int, FacetPBN] = field(default_factory=dict)
+    palette: PalettePBN | None = None
 
-    def extract_color_palette_from_canvas(self, rgb_img: np.ndarray) -> tuple[Palette, dict[tuple[int,int,int], int]]:
-        colors = rgb_img.reshape(-1, 3)
-        unique_colors = sorted({tuple[int, ...](int(c) for c in row) for row in colors})
-        palette = {idx + 1: color for idx, color in enumerate[tuple[int, ...]](unique_colors)}
-        color_to_idx = {color: idx for idx, color in palette.items()}
-        return palette, color_to_idx
+    def __post_init__(self):
+        """Automatically extract palette if not provided."""
+        if self.palette is None:
+            palette = self._extract_color_palette_from_canvas()
+            object.__setattr__(self, 'palette', palette)
 
-    def split_canvas_into_facets(self) -> list[FacetPBN]:
-        """Rebuild and return facet descriptors from a label map and RGB image."""
+    def _extract_color_palette_from_canvas(self) -> PalettePBN:
+        """Internal method to extract color palette from the canvas RGB image."""
+        colors = self.rgb_img.reshape(-1, 3)
+        unique_colors = sorted({tuple(int(c) for c in row) for row in colors})
+        color_map = {idx + 1: color for idx, color in enumerate(unique_colors)}
+        return PalettePBN(color_map=color_map)
+
+    def extract_color_palette_from_canvas(self) -> PalettePBN:
+        """Extract color palette from the canvas RGB image."""
+        return self._extract_color_palette_from_canvas()
+
+    def extract_facets_from_canvas(self) -> dict[int, FacetPBN]:
+        """
+        Extract facet descriptors from the label map and RGB image.
+        Populates self.facets in place and returns the facets dictionary.
+        """
+        if self.facets:
+            return self.facets
+        
         labels = self.labels_img.astype(np.int32, copy=False)
         num_facets = int(labels.max()) + 1
-
-        _ , color_to_palette_idx = self.extract_color_palette_from_canvas(rgb_img=self.rgb_img)
 
         facets: dict[int, FacetPBN] = {}
         for facet_id in range(num_facets):
             mask = labels == facet_id
             facet_pixel_ys, facet_pixel_xs = np.nonzero(mask)
+
             if facet_pixel_ys.size == 0:
                 continue
+            
             representative_y, representative_x = int(facet_pixel_ys[0]), int(facet_pixel_xs[0])
-            color_rgb = tuple[int, ...](int(c) for c in self.rgb_img[representative_y, representative_x])
-            palette_id = color_to_palette_idx[color_rgb]
+            color_rgb = tuple(int(c) for c in self.rgb_img[representative_y, representative_x])
+            palette_id = self.palette[color_rgb]
             facet = FacetPBN.from_mask(
                 facet_id=facet_id,
                 mask=mask,
@@ -51,6 +65,8 @@ class CanvasPBN:
             )
             facets[facet_id] = facet
 
+        object.__setattr__(self, 'facets', facets)
+        
         return facets
 
     def render_canvas_from_facets(self) -> np.ndarray:
@@ -61,7 +77,7 @@ class CanvasPBN:
         """
         canvas = np.zeros((self.height, self.width, 3), dtype=np.uint8)
 
-        for facet_id, facet in facet_dict.items():
+        for facet_id, facet in self.facets.items():
             mask = self.labels_img == facet_id
             canvas[mask] = facet.color_rgb
 

@@ -1,0 +1,2 @@
+"""Configuration for PBN components."""
+

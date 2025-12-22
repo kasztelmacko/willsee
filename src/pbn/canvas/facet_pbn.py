@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 import numpy as np
 from scipy.ndimage import distance_transform_edt
-import pbn.pbn_config.facet_pbn_config as FACET_CONF
+import pbn.config.facet_pbn_config as FACET_CONF
 
 
 @dataclass(frozen=True)
