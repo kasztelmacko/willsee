@@ -8,3 +8,16 @@ FACET_SIZE_FONT_SIZE_CONFIG = {
     12: (51, 200),
     16: (200, None),
 }
+
+CANVAS_SIZE_CONFIG = {
+    "A4": {
+        "LANDSCAPE": {
+            "WIDTH": 2400,
+            "HEIGHT": 1696
+        },
+        "PORTRAIT": {
+            "WIDTH": 1800,
+            "HEIGHT": 1272
+        }
+    }
+}

@@ -1,8 +1,6 @@
-"""Canvas and facet classes for PBN."""
+from pbn.canvas.canvas import Canvas
+from pbn.canvas.facet import Facet
+from pbn.canvas.color_palette import ColorPalette
 
-from pbn.canvas.canvas_pbn import CanvasPBN
-from pbn.canvas.facet_pbn import FacetPBN
-from pbn.canvas.palette_pbn import PalettePBN
-
-__all__ = ["CanvasPBN", "FacetPBN", "PalettePBN"]
+__all__ = ["Canvas", "Facet", "ColorPalette"]
 
