@@ -4,12 +4,18 @@ from dataclasses import dataclass, field
 
 import numpy as np
 from PIL import Image
+from scipy.ndimage import label
 
 from sklearn.cluster import KMeans
 
 from pbn.canvas.facet import Facet
 from pbn.canvas.color_palette import ColorPalette
-from pbn.config.pbn_config import CANVAS_SIZE_CONFIG
+from pbn.canvas.utils.merge_facets import (
+    compute_adjacency_list,
+    compute_merge_targets,
+    compute_merged_image,
+)
+from pbn.config.pbn_config import CANVAS_SIZE_CONFIG, MIN_FACET_PIXELS_SIZE
 
 @dataclass(frozen=True)
 class Canvas:
@@ -23,7 +29,7 @@ class Canvas:
     processed_image: np.ndarray
     outlined_image: np.ndarray
 
-    color_palette: Palette
+    color_palette: ColorPalette
 
     @classmethod
     def create_canvas(
@@ -70,7 +76,7 @@ class Canvas:
                 )
 
     @staticmethod
-    def _cluster_image(image: np.ndarray, n_colors: int) -> tuple[np.ndarray, Palette]:
+    def _cluster_image(image: np.ndarray, n_colors: int) -> tuple[np.ndarray, ColorPalette]:
         height, width = image.shape[:2]
         
         kmeans = KMeans(n_clusters=n_colors, random_state=42)
@@ -88,8 +94,64 @@ class Canvas:
 
     @staticmethod
     def _process_image(image: np.ndarray) -> np.ndarray:
-        return image
+        facets_img, facet_list = Canvas._extract_facets_from_image(clustered_image=image, connectivity=2)
+
+        small_facet_ids = Canvas._find_small_facet_ids(facet_list=facet_list, min_facet_size=MIN_FACET_PIXELS_SIZE)
+        image_with_small_facets_removed = Canvas._merge_facets(
+            facets_img=facets_img,
+            facet_list=facet_list, 
+            facet_ids_to_merge=small_facet_ids
+        )
+        return image_with_small_facets_removed
 
     @staticmethod
     def _outline_image(image: np.ndarray) -> np.ndarray:
         return image
+
+    @staticmethod
+    def _extract_facets_from_image(
+        clustered_image: np.ndarray,
+        connectivity: int
+    ) -> tuple[np.ndarray, list[Facet]]:
+
+        height, width = clustered_image.shape
+        facets_img = np.zeros((height, width), dtype=np.int32)
+        facet_list: list[Facet] = []
+        facet_id = 0
+        
+        structure = np.ones((3, 3), dtype=bool) if connectivity == 2 else None
+        
+        for color in np.unique(clustered_image):
+            color_mask = clustered_image == color
+            labeled_facets, num_facets = label(color_mask, structure=structure)
+            
+            for i in range(1, num_facets + 1):
+                facet_id += 1
+                facet_mask = labeled_facets == i
+                facet_size_px = int(facet_mask.sum())
+                facets_img[facet_mask] = facet_id
+
+                facet = Facet.create_facet(
+                    facet_id=facet_id,
+                    facet_color_label=int(color),
+                    facet_size_px=facet_size_px,
+                )
+                facet_list.append(facet)
+        
+        return facets_img, facet_list
+
+    @staticmethod
+    def _find_small_facet_ids(
+        facet_list: list[Facet], min_facet_size: int
+    ) -> list[int]:
+        return [facet.facet_id for facet in facet_list if facet.facet_size_px < min_facet_size]
+
+
+    @staticmethod
+    def _merge_facets(
+        facets_img: np.ndarray, facet_list: list[Facet], facet_ids_to_merge: list[int]
+    ) -> np.ndarray:
+        adjacency_list = compute_adjacency_list(image=facets_img, num_facets=len(facet_list))
+        merge_target_dict = compute_merge_targets(adjacency_list=adjacency_list, facet_ids_to_merge=facet_ids_to_merge)
+        return compute_merged_image(image=facets_img, facet_list=facet_list, merge_targets=merge_target_dict)
+        

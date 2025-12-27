@@ -33,39 +33,8 @@ labels_img = canvas.clustered_image.astype(np.int32)
 print(f"\nLabels image shape: {labels_img.shape}")
 print(f"Unique labels: {len(np.unique(labels_img))}")
 
-def extract_facets(labels_img: np.ndarray, connectivity: int):
-    facets_img = np.zeros_like(labels_img, dtype=np.int32)
-    facets_dict = {}
-    facet_id = 0
+processed_facets_img = canvas.processed_image.astype(np.int32)
+print(f"\nProcessed image shape: {processed_facets_img.shape}")
+print(f"Unique facet IDs in processed image: {len(np.unique(processed_facets_img))}")
 
-    structure = np.ones((3,3)) if connectivity == 2 else None
 
-    for color in np.unique(labels_img):
-        mask = labels_img == color
-        labeled_pixels, num = label(mask, structure=structure)
-
-        for i in range(1, num + 1):
-            facet_id += 1
-
-            facet_coordinates = np.where(labeled_pixels == i)
-            facets_img[facet_coordinates] = facet_id
-
-            facet_mask = np.zeros_like(labeled_pixels, dtype=bool)
-            facet_mask[facet_coordinates] = True
-
-            facets_dict[facet_id] = Facet.create_facet(
-                facet_id=facet_id,
-                facet_color_label=color,
-                facet_mask=facet_mask,
-            )
-
-    return facets_img, facets_dict
-
-facets_img, facets_dict = extract_facets(labels_img=labels_img, connectivity=2)
-print(f"\nTotal facets extracted: {len(facets_dict)}")
-
-print("\nSample facets:")
-sample_ids = [2, 5, 751, 1400, 6427, 6434]
-for facet_id in sample_ids:
-    if facet_id in facets_dict:
-        print(f"Facet {facet_id}: {repr(facets_dict[facet_id])}")

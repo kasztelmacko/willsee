@@ -21,3 +21,5 @@ CANVAS_SIZE_CONFIG = {
         }
     }
 }
+
+MIN_FACET_PIXELS_SIZE = 50
