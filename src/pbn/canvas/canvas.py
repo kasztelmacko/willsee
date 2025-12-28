@@ -1,21 +1,26 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+import time
 
 import numpy as np
 from PIL import Image
-from scipy.ndimage import label
 
 from sklearn.cluster import KMeans
 
 from pbn.canvas.facet import Facet
 from pbn.canvas.color_palette import ColorPalette
 from pbn.canvas.utils.merge_facets import (
-    compute_adjacency_list,
-    compute_merge_targets,
-    compute_merged_image,
+    label_facets,
+    merge_facets,
+    compute_small_facet_ids,
+    compute_narrow_facet_ids,
 )
-from pbn.config.pbn_config import CANVAS_SIZE_CONFIG, MIN_FACET_PIXELS_SIZE
+from pbn.config.pbn_config import (
+    CANVAS_SIZE_CONFIG, 
+    MIN_FACET_PIXELS_SIZE, 
+    NARROW_FACET_THRESHOLD_PX
+)
 
 @dataclass(frozen=True)
 class Canvas:
@@ -29,8 +34,6 @@ class Canvas:
     processed_image: np.ndarray
     outlined_image: np.ndarray
 
-    color_palette: ColorPalette
-
     @classmethod
     def create_canvas(
         cls,
@@ -39,14 +42,35 @@ class Canvas:
         canvas_page_size: str,
         n_colors: int
     ) -> Canvas:
+        start_total = time.perf_counter()
+        
+        t0 = time.perf_counter()
         prepared_image = cls._prepare_image(
             image=input_image,
             canvas_orientation=canvas_orientation,
             canvas_page_size=canvas_page_size
         )
-        clustered_image, color_palette = cls._cluster_image(image=prepared_image, n_colors=n_colors)
+        t1 = time.perf_counter()
+        print(f"Image preparation: {t1 - t0:.3f}s")
+        
+        t0 = time.perf_counter()
+        clustered_image = cls._cluster_image(image=prepared_image, n_colors=n_colors)
+        t1 = time.perf_counter()
+        print(f"KMeans clustering: {t1 - t0:.3f}s")
+        
+        t0 = time.perf_counter()
         processed_image = cls._process_image(image=clustered_image)
+        t1 = time.perf_counter()
+        print(f"Image processing: {t1 - t0:.3f}s")
+        
+        t0 = time.perf_counter()
         outlined_image = cls._outline_image(image=processed_image)
+        t1 = time.perf_counter()
+        print(f"Image outlining: {t1 - t0:.3f}s")
+        
+        end_total = time.perf_counter()
+        print(f"\nTotal execution time: {end_total - start_total:.3f}s")
+        print("=" * 50)
 
         return cls(
             input_image=input_image,
@@ -57,7 +81,6 @@ class Canvas:
             clustered_image=clustered_image,
             processed_image=processed_image,
             outlined_image=outlined_image,
-            color_palette=color_palette
         )
 
 
@@ -76,82 +99,95 @@ class Canvas:
                 )
 
     @staticmethod
-    def _cluster_image(image: np.ndarray, n_colors: int) -> tuple[np.ndarray, ColorPalette]:
+    def _cluster_image(image: np.ndarray, n_colors: int) -> np.ndarray:
+        """
+        Cluster image by color and return RGB image with clustered colors.
+        """
         height, width = image.shape[:2]
         
         kmeans = KMeans(n_clusters=n_colors, random_state=42)
         kmeans.fit(image.reshape(-1, 3))
 
-        clustered_image = kmeans.labels_.reshape(height, width).astype(np.int8)
-        clustered_rgb_image = kmeans.cluster_centers_[clustered_image].astype(np.uint8)
+        clustered_rgb_image = kmeans.cluster_centers_[kmeans.labels_].astype(np.uint8)
+        clustered_rgb_image = clustered_rgb_image.reshape(height, width, 3)
 
-        color_palette = ColorPalette.create_color_palette(
-            image=clustered_rgb_image,
-            n_colors=n_colors
-        )
-
-        return clustered_image, color_palette
+        return clustered_rgb_image
 
     @staticmethod
     def _process_image(image: np.ndarray) -> np.ndarray:
-        facets_img, facet_list = Canvas._extract_facets_from_image(clustered_image=image, connectivity=2)
+        """
+        Process clustered image by:
+        1. Finding small facets and merging them
+        2. Finding narrow facets and merging them
 
-        small_facet_ids = Canvas._find_small_facet_ids(facet_list=facet_list, min_facet_size=MIN_FACET_PIXELS_SIZE)
-        image_with_small_facets_removed = Canvas._merge_facets(
-            facets_img=facets_img,
-            facet_list=facet_list, 
-            facet_ids_to_merge=small_facet_ids
-        )
-        return image_with_small_facets_removed
+        """
+        t_small_start = time.perf_counter()
+        small_merged_array = Canvas._process_small_facets(image=image, min_facet_size=MIN_FACET_PIXELS_SIZE)
+        t_small_end = time.perf_counter()
+        print(f"  Small facet processing: {t_small_end - t_small_start:.3f}s")
+        
+        t_narrow_start = time.perf_counter()
+        narrow_merged_array = Canvas._process_narrow_facets(image=small_merged_array, narrow_thresh_px=NARROW_FACET_THRESHOLD_PX)
+        t_narrow_end = time.perf_counter()
+        print(f"  Narrow facet processing: {t_narrow_end - t_narrow_start:.3f}s")
+        
+        return narrow_merged_array
 
     @staticmethod
     def _outline_image(image: np.ndarray) -> np.ndarray:
         return image
 
     @staticmethod
-    def _extract_facets_from_image(
-        clustered_image: np.ndarray,
-        connectivity: int
-    ) -> tuple[np.ndarray, list[Facet]]:
-
-        height, width = clustered_image.shape
-        facets_img = np.zeros((height, width), dtype=np.int32)
-        facet_list: list[Facet] = []
-        facet_id = 0
+    def _process_small_facets(image: np.ndarray, min_facet_size: int) -> np.ndarray:
+        t0 = time.perf_counter()
+        facets_img, facet_sizes, facet_colors = label_facets(image=image)
+        t1 = time.perf_counter()
+        print(f"    - Labeling facets: {t1 - t0:.3f}s")
         
-        structure = np.ones((3, 3), dtype=bool) if connectivity == 2 else None
+        t0 = time.perf_counter()
+        small_facet_ids = compute_small_facet_ids(
+            facet_sizes=facet_sizes,
+            min_facet_size=min_facet_size
+        )
+        t1 = time.perf_counter()
+        print(f"    - Finding small facets: {t1 - t0:.3f}s")
         
-        for color in np.unique(clustered_image):
-            color_mask = clustered_image == color
-            labeled_facets, num_facets = label(color_mask, structure=structure)
-            
-            for i in range(1, num_facets + 1):
-                facet_id += 1
-                facet_mask = labeled_facets == i
-                facet_size_px = int(facet_mask.sum())
-                facets_img[facet_mask] = facet_id
-
-                facet = Facet.create_facet(
-                    facet_id=facet_id,
-                    facet_color_label=int(color),
-                    facet_size_px=facet_size_px,
-                )
-                facet_list.append(facet)
+        t0 = time.perf_counter()
+        merged_array = merge_facets(
+            image=facets_img,
+            facet_sizes=facet_sizes,
+            facet_colors=facet_colors,
+            merge_facet_ids=small_facet_ids,
+        )
+        t1 = time.perf_counter()
+        print(f"    - Merging small facets: {t1 - t0:.3f}s")
         
-        return facets_img, facet_list
+        return merged_array
 
     @staticmethod
-    def _find_small_facet_ids(
-        facet_list: list[Facet], min_facet_size: int
-    ) -> list[int]:
-        return [facet.facet_id for facet in facet_list if facet.facet_size_px < min_facet_size]
-
-
-    @staticmethod
-    def _merge_facets(
-        facets_img: np.ndarray, facet_list: list[Facet], facet_ids_to_merge: list[int]
-    ) -> np.ndarray:
-        adjacency_list = compute_adjacency_list(image=facets_img, num_facets=len(facet_list))
-        merge_target_dict = compute_merge_targets(adjacency_list=adjacency_list, facet_ids_to_merge=facet_ids_to_merge)
-        return compute_merged_image(image=facets_img, facet_list=facet_list, merge_targets=merge_target_dict)
+    def _process_narrow_facets(image: np.ndarray, narrow_thresh_px: int) -> np.ndarray:
+        t0 = time.perf_counter()
+        facets_img, facet_sizes, facet_colors = label_facets(image=image)
+        t1 = time.perf_counter()
+        print(f"    - Labeling facets: {t1 - t0:.3f}s")
         
+        t0 = time.perf_counter()
+        narrow_facet_ids = compute_narrow_facet_ids(
+            image=facets_img,
+            facet_sizes=facet_sizes,
+            narrow_thresh_px=narrow_thresh_px,
+        )
+        t1 = time.perf_counter()
+        print(f"    - Finding narrow facets: {t1 - t0:.3f}s")
+        
+        t0 = time.perf_counter()
+        merged_array = merge_facets(
+            image=facets_img,
+            facet_sizes=facet_sizes,
+            facet_colors=facet_colors,
+            merge_facet_ids=narrow_facet_ids,
+        )
+        t1 = time.perf_counter()
+        print(f"    - Merging narrow facets: {t1 - t0:.3f}s")
+        
+        return merged_array

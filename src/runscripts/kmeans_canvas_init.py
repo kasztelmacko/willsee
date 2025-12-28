@@ -26,15 +26,16 @@ canvas = Canvas.create_canvas(
     n_colors=N_CLUSTERS
 )
 
-print("Color Palette:")
-print(canvas.color_palette.color_palette_dict)
-
-labels_img = canvas.clustered_image.astype(np.int32)
+labels_img = canvas.clustered_image
 print(f"\nLabels image shape: {labels_img.shape}")
 print(f"Unique labels: {len(np.unique(labels_img))}")
 
-processed_facets_img = canvas.processed_image.astype(np.int32)
+processed_facets_img = canvas.processed_image
 print(f"\nProcessed image shape: {processed_facets_img.shape}")
 print(f"Unique facet IDs in processed image: {len(np.unique(processed_facets_img))}")
 
+processed_path = Path("data/input_image/processed_canvas.png")
+clustered_path = Path("data/input_image/clustered.png")
+
+Image.fromarray(processed_facets_img, mode="RGB").save(processed_path)
 

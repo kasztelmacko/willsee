@@ -11,11 +11,11 @@ class Facet:
     facet_id: int
     facet_color_label: int
     facet_size_px: int
+    facet_avg_width_px: float
+    facet_avg_height_px: float
     facet_bounding_box: tuple[int, int, int, int] | None = None
     facet_label_point: tuple[int, int] | None = None
     facet_label_point_font_size: int | None = None
-    facet_avg_width_px: float | None = None
-    facet_avg_height_px: float | None = None
 
     @classmethod
     def create_facet(
@@ -23,11 +23,15 @@ class Facet:
         facet_id: int,
         facet_color_label: int,
         facet_size_px: int,
+        facet_avg_width_px: float,
+        facet_avg_height_px: float
     ) -> Facet:
         return cls(
             facet_id=facet_id,
             facet_color_label=facet_color_label,
             facet_size_px=facet_size_px,
+            facet_avg_width_px=facet_avg_width_px,
+            facet_avg_height_px=facet_avg_height_px
         )
 
     @staticmethod
@@ -49,7 +53,7 @@ class Facet:
         return Facet(
             facet_id=facet.facet_id,
             facet_color_label=facet.facet_color_label,
-            facet_size_px=facet_size_px,
+            facet_size_px=facet.facet_size_px,
             facet_bounding_box=facet_bounding_box,
             facet_label_point=facet_label_point,
             facet_label_point_font_size=facet_label_point_font_size,

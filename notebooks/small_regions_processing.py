@@ -2,87 +2,146 @@ from collections import defaultdict
 from typing import Dict, List, Tuple
 
 import numpy as np
+from collections import deque
 from scipy.ndimage import distance_transform_edt
+
+from numba import njit
 
 
 AdjacencyList = List[List[Tuple[int, int]]]
 
 
 def _label_facets(clustered_array: np.ndarray) -> Tuple[np.ndarray, List[int], np.ndarray]:
-    """
-    Label connected components (facets) of equal color.
+    labels, sizes, colors = _label_facets_numba_core(clustered_array)
+    component_sizes = sizes.tolist()
+    return labels, component_sizes, colors
 
-    Returns:
-    - labels_img: (H, W) int32 component id per pixel (0..num_components-1)
-    - component_sizes: list of sizes per component id
-    - component_colors: (num_components, 3) uint8 representative color per component
-    """
-    h, w, _ = clustered_array.shape
+@njit
+def _label_facets_numba_core(img):
+    h, w, _ = img.shape
 
-    labels_img = np.full((h, w), fill_value=-1, dtype=np.int32)
-    component_sizes: List[int] = []
-    component_colors: List[np.ndarray] = []
+    labels = -np.ones((h, w), np.int32)
 
-    neighbors = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+    max_components = h * w
+    component_sizes = np.zeros(max_components, np.int32)
+    component_colors = np.zeros((max_components, 3), np.uint8)
+
+    stack_y = np.empty(h * w, np.int32)
+    stack_x = np.empty(h * w, np.int32)
+
     current_id = 0
 
     for y in range(h):
         for x in range(w):
-            if labels_img[y, x] != -1:
+            if labels[y, x] != -1:
                 continue
 
-            base_color = clustered_array[y, x]
-            stack = [(y, x)]
-            labels_img[y, x] = current_id
+            r = img[y, x, 0]
+            g = img[y, x, 1]
+            b = img[y, x, 2]
+
+            component_colors[current_id, 0] = r
+            component_colors[current_id, 1] = g
+            component_colors[current_id, 2] = b
+
+            top = 0
+            stack_y[top] = y
+            stack_x[top] = x
+            top += 1
+
+            labels[y, x] = current_id
             size = 0
 
-            while stack:
-                cy, cx = stack.pop()
+            while top > 0:
+                top -= 1
+                cy = stack_y[top]
+                cx = stack_x[top]
                 size += 1
 
-                for dy, dx in neighbors:
-                    ny, nx = cy + dy, cx + dx
-                    if 0 <= ny < h and 0 <= nx < w and labels_img[ny, nx] == -1:
-                        if np.array_equal(clustered_array[ny, nx], base_color):
-                            labels_img[ny, nx] = current_id
-                            stack.append((ny, nx))
+                ny = cy - 1
+                if ny >= 0 and labels[ny, cx] == -1:
+                    if (img[ny, cx, 0] == r and
+                        img[ny, cx, 1] == g and
+                        img[ny, cx, 2] == b):
+                        labels[ny, cx] = current_id
+                        stack_y[top] = ny
+                        stack_x[top] = cx
+                        top += 1
 
-            component_sizes.append(size)
-            component_colors.append(base_color.copy())
+                ny = cy + 1
+                if ny < h and labels[ny, cx] == -1:
+                    if (img[ny, cx, 0] == r and
+                        img[ny, cx, 1] == g and
+                        img[ny, cx, 2] == b):
+                        labels[ny, cx] = current_id
+                        stack_y[top] = ny
+                        stack_x[top] = cx
+                        top += 1
+
+                nx = cx - 1
+                if nx >= 0 and labels[cy, nx] == -1:
+                    if (img[cy, nx, 0] == r and
+                        img[cy, nx, 1] == g and
+                        img[cy, nx, 2] == b):
+                        labels[cy, nx] = current_id
+                        stack_y[top] = cy
+                        stack_x[top] = nx
+                        top += 1
+
+                nx = cx + 1
+                if nx < w and labels[cy, nx] == -1:
+                    if (img[cy, nx, 0] == r and
+                        img[cy, nx, 1] == g and
+                        img[cy, nx, 2] == b):
+                        labels[cy, nx] = current_id
+                        stack_y[top] = cy
+                        stack_x[top] = nx
+                        top += 1
+
+            component_sizes[current_id] = size
             current_id += 1
 
-    component_colors_arr = np.stack(component_colors, axis=0).astype(np.uint8)
-    return labels_img, component_sizes, component_colors_arr
+    return labels, component_sizes[:current_id], component_colors[:current_id]
 
-
-def _build_adjacency(labels_img: np.ndarray, num_components: int) -> AdjacencyList:
+def _build_adjacency(
+    image: np.ndarray,
+    num_components: int
+) -> AdjacencyList:
     """
-    Build a region adjacency graph (RAG) where each node is a facet/component,
-    and edge weights are shared boundary lengths between components.
+    Build a region adjacency graph (RAG) where each node is a facet,
+    and edge weights are shared boundary lengths between facets.
+    
     """
-    h, w = labels_img.shape
-    boundary_counts: Dict[Tuple[int, int], int] = defaultdict[Tuple[int, int], int](int)
-
-    for y in range(h):
-        for x in range(w):
-            id_a = labels_img[y, x]
-            if x + 1 < w:
-                id_b = labels_img[y, x + 1]
-                if id_a != id_b:
-                    a, b = sorted((id_a, id_b))
-                    boundary_counts[(a, b)] += 1
-            if y + 1 < h:
-                id_b = labels_img[y + 1, x]
-                if id_a != id_b:
-                    a, b = sorted((id_a, id_b))
-                    boundary_counts[(a, b)] += 1
-
-    adjacency: AdjacencyList = [[] for _ in range(num_components)]
+    height, width = image.shape
+    boundary_counts: dict[tuple[int, int], int] = defaultdict(int)
+    
+    if width > 1:
+        left = image[:, :-1]
+        right = image[:, 1:]
+        mask = left != right
+        pairs = np.stack([left[mask], right[mask]], axis=1)
+        pairs = np.sort(pairs, axis=1)
+        unique_pairs, counts = np.unique(pairs, axis=0, return_counts=True)
+        for (a, b), count in zip(unique_pairs, counts):
+            boundary_counts[(int(a), int(b))] += int(count)
+    
+    if height > 1:
+        top = image[:-1, :]
+        bottom = image[1:, :]
+        mask = top != bottom
+        pairs = np.stack([top[mask], bottom[mask]], axis=1)
+        pairs = np.sort(pairs, axis=1)
+        unique_pairs, counts = np.unique(pairs, axis=0, return_counts=True)
+        for (a, b), count in zip(unique_pairs, counts):
+            boundary_counts[(int(a), int(b))] += int(count)
+    
+    adjacency_list: AdjacencyList = [[] for _ in range(num_components + 1)]
     for (a, b), length in boundary_counts.items():
-        adjacency[a].append((b, length))
-        adjacency[b].append((a, length))
-
-    return adjacency
+        if 1 <= a <= num_components and 1 <= b <= num_components:
+            adjacency_list[a].append((b, length))
+            adjacency_list[b].append((a, length))
+    
+    return adjacency_list
 
 
 def _compute_merge_targets(
@@ -144,103 +203,68 @@ def _apply_merges(
     return final_array.astype(np.uint8)
 
 
-def compute_narrow_flags(
-    labels_img: np.ndarray,
-    component_sizes: List[int],
-    narrow_thresh_px: int | None,
-) -> List[bool] | None:
-    """
-    Compute which components are narrow based on average thickness.
-    """
-    if narrow_thresh_px is None:
-        return None
-
-    num_components = len(component_sizes)
-    narrow_flags: List[bool] = [False] * num_components
-
-    for comp_id in range(num_components):
-        comp_mask = labels_img == comp_id
-        size = component_sizes[comp_id]
-        if size == 0:
-            continue
-
-        rows_active = np.count_nonzero(np.any(comp_mask, axis=1))
-        cols_active = np.count_nonzero(np.any(comp_mask, axis=0))
-
-        avg_row_width = size / max(rows_active, 1)
-        avg_col_height = size / max(cols_active, 1)
-
-        if avg_row_width < narrow_thresh_px or avg_col_height < narrow_thresh_px:
-            narrow_flags[comp_id] = True
-
-    return narrow_flags
-
-
-def compute_narrow_flags_from_array(
-    clustered_array: np.ndarray, narrow_thresh_px: int | None
-) -> List[bool] | None:
-    """
-    Convenience helper: compute narrow flags directly from an RGB clustered image.
-    """
-    labels_img, component_sizes, _ = _label_facets(clustered_array)
-    return compute_narrow_flags(labels_img, component_sizes, narrow_thresh_px)
-
-
-def compute_narrow_component_ids_from_array(
-    clustered_array: np.ndarray, narrow_thresh_px: int | None
+def compute_narrow_component_ids(
+    clustered_array: np.ndarray | None = None,
+    narrow_thresh_px: int | None = None,
+    *,
+    labels_img: np.ndarray | None = None,
+    component_sizes: List[int] | None = None,
 ) -> List[int]:
     """
     Return component ids that are considered narrow.
+    
+    A component is narrow if its average width per row OR average height per column
+    is below the threshold.
     """
-    labels_img, component_sizes, _ = _label_facets(clustered_array)
-    flags = compute_narrow_flags(labels_img, component_sizes, narrow_thresh_px)
-    if flags is None:
-        return []
-    return [idx for idx, is_narrow in enumerate(flags) if is_narrow]
+    if labels_img is None or component_sizes is None:
+        labels_img, component_sizes, _ = _label_facets(clustered_array)
+    
+    return [
+        comp_id
+        for comp_id in range(len(component_sizes))
+        if component_sizes[comp_id] > 0
+        and (
+            (component_sizes[comp_id] / max(np.count_nonzero(np.any(labels_img == comp_id, axis=1)), 1) < narrow_thresh_px)
+            or (component_sizes[comp_id] / max(np.count_nonzero(np.any(labels_img == comp_id, axis=0)), 1) < narrow_thresh_px)
+        )
+    ]
 
 
 def compute_small_component_ids(
-    clustered_array: np.ndarray, min_facet_size: int
+    clustered_array: np.ndarray | None = None,
+    min_facet_size: int | None = None,
+    *,
+    component_sizes: List[int] | None = None,
 ) -> List[int]:
     """
     Return component ids whose size is below the given threshold.
     """
-    _, component_sizes, _ = _label_facets(clustered_array)
+    if component_sizes is None:
+        _, component_sizes, _ = _label_facets(clustered_array)
+    
     return [idx for idx, sz in enumerate(component_sizes) if sz < min_facet_size]
 
 
-def highlight_facets_by_ids(
-    clustered_array: np.ndarray,
-    component_ids: List[int],
-    highlight_color: Tuple[int, int, int] = (255, 0, 0),
+def merge_facets(
+    clustered_array: np.ndarray | None = None,
+    merge_component_ids: List[int] | None = None,
+    *,
+    labels_img: np.ndarray | None = None,
+    component_sizes: List[int] | None = None,
+    component_colors: np.ndarray | None = None,
 ) -> np.ndarray:
-    """
-    Return a copy of the clustered image with the specified component ids recolored.
-    """
-    labels_img, _, _ = _label_facets(clustered_array)
-    highlight_arr = clustered_array.copy()
-    ids_set = set(component_ids)
-    mask = np.isin(labels_img, list(ids_set))
-    highlight_arr[mask] = np.array(highlight_color, dtype=np.uint8)
-    return highlight_arr
-
-
-def merge_facets(clustered_array: np.ndarray, merge_component_ids: List[int]) -> np.ndarray:
     """
     Merge connected regions (facets) of equal color into neighbouring facets
     using a simple region adjacency graph (RAG).
 
     Components listed in `merge_component_ids` are merged into neighbouring facets
     chosen by maximum shared boundary length.
-
-    Returns a new (H, W, 3) uint8 array with merged facets recolored.
     """
-    labels_img, component_sizes, component_colors = _label_facets(clustered_array)
+    if labels_img is None or component_sizes is None or component_colors is None:
+        labels_img, component_sizes, component_colors = _label_facets(clustered_array)
+    
 
     merge_ids_set = set(merge_component_ids)
-    invalid_ids = [cid for cid in merge_ids_set if cid < 0 or cid >= len(component_sizes)]
-    if invalid_ids:
-        raise ValueError(f"merge_component_ids contains invalid ids: {invalid_ids}")
 
     adjacency = _build_adjacency(labels_img, num_components=len(component_sizes))
     merge_target = _compute_merge_targets(component_sizes, adjacency, merge_ids_set)
@@ -264,30 +288,17 @@ def compute_narrow_facets_mask(
     labels_img, component_sizes, _ = _label_facets(clustered_array)
     h, w = labels_img.shape
 
-    narrow_flags = compute_narrow_flags(labels_img, component_sizes, narrow_thresh_px)
-    if narrow_flags is None:
-        return np.zeros((h, w), dtype=bool)
+    narrow_ids = compute_narrow_component_ids(
+        labels_img=labels_img,
+        component_sizes=component_sizes,
+        narrow_thresh_px=narrow_thresh_px,
+    )
 
     narrow_mask = np.zeros((h, w), dtype=bool)
-    for comp_id, is_narrow in enumerate(narrow_flags):
-        if not is_narrow:
-            continue
+    for comp_id in narrow_ids:
         narrow_mask |= labels_img == comp_id
 
     return narrow_mask
-
-
-def highlight_narrow_facets(
-    clustered_array: np.ndarray, narrow_thresh_px: int
-) -> np.ndarray:
-    """
-    Return a copy of the clustered image with narrow facets recolored in red.
-    """
-    narrow_mask = compute_narrow_facets_mask(clustered_array, narrow_thresh_px)
-    highlighted = clustered_array.copy()
-    highlighted[narrow_mask] = np.array([255, 0, 0], dtype=np.uint8)
-    return highlighted
-
 
 def compute_component_label_centers(labels_img: np.ndarray) -> List[Tuple[int, int]]:
     """
