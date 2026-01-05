@@ -12,6 +12,7 @@ from pbn.canvas.utils.merge_facets import (
     compute_small_facet_ids,
     compute_narrow_facet_ids,
 )
+from pbn.canvas.utils.outline_image import create_outline_mask, create_image_outline
 from pbn.config.pbn_config import (
     CANVAS_SIZE_CONFIG, 
     MIN_FACET_PIXELS_SIZE, 
@@ -113,7 +114,9 @@ class Canvas:
 
     @staticmethod
     def _outline_image(image: np.ndarray) -> np.ndarray:
-        return image
+        outline_mask = create_outline_mask(image=image)
+        outline_image = create_image_outline(image=image, outline_mask=outline_mask, outline_color=(0, 0, 0))
+        return outline_image
 
     @staticmethod
     def _process_small_facets(image: np.ndarray, min_facet_size: int) -> tuple[np.ndarray, np.ndarray]:
