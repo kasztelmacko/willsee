@@ -7,6 +7,62 @@ from numba import njit
 AdjacencyList = list[list[tuple[int, int]]]
 
 
+def process_image(
+    image: np.ndarray,
+    min_facet_size: int,
+    narrow_thresh_px: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Process clustered image by:
+    1. Finding small facets and merging them
+    2. Finding narrow facets and merging them
+    3. Reindexing facet ids to a compact 0..N-1 range
+    """
+    small_merged_array, _ = process_small_facets(image=image, min_facet_size=min_facet_size)
+    narrow_merged_array, narrow_facets = process_narrow_facets(
+        image=small_merged_array,
+        narrow_thresh_px=narrow_thresh_px,
+    )
+
+    _, dense_inverse = np.unique(narrow_facets, return_inverse=True)
+    dense_facets = dense_inverse.reshape(narrow_facets.shape).astype(np.int32)
+
+    return narrow_merged_array, dense_facets
+
+
+def process_small_facets(image: np.ndarray, min_facet_size: int) -> tuple[np.ndarray, np.ndarray]:
+    facets_img, facet_sizes, facet_colors = label_facets(image=image)
+    small_facet_ids = compute_small_facet_ids(
+        facet_sizes=facet_sizes,
+        min_facet_size=min_facet_size
+    )
+    merged_array, merged_facets = merge_facets(
+        image=facets_img,
+        facet_sizes=facet_sizes,
+        facet_colors=facet_colors,
+        merge_facet_ids=small_facet_ids,
+    )
+
+    return merged_array, merged_facets
+
+
+def process_narrow_facets(image: np.ndarray, narrow_thresh_px: int) -> tuple[np.ndarray, np.ndarray]:
+    facets_img, facet_sizes, facet_colors = label_facets(image=image)
+    narrow_facet_ids = compute_narrow_facet_ids(
+        image=facets_img,
+        facet_sizes=facet_sizes,
+        narrow_thresh_px=narrow_thresh_px,
+    )
+    merged_array, merged_facets = merge_facets(
+        image=facets_img,
+        facet_sizes=facet_sizes,
+        facet_colors=facet_colors,
+        merge_facet_ids=narrow_facet_ids,
+    )
+
+    return merged_array, merged_facets
+
+
 def label_facets(image: np.ndarray) -> tuple[np.ndarray, list[int], np.ndarray]:
     """
     Label facets in a clustered RGB image.
@@ -262,4 +318,3 @@ def merge_facets(
     adjacency = compute_adjacency_list(image, num_facets=len(facet_sizes))
     merge_target = compute_merge_targets(facet_sizes, adjacency, merge_facet_ids)
     return _apply_merges(image, facet_colors, merge_target)
-
