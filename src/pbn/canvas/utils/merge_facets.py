@@ -1,10 +1,10 @@
 from collections import defaultdict
-from typing import Dict, List, Tuple
+from typing import Any
 
 import numpy as np
 from numba import njit
 
-AdjacencyList = List[List[Tuple[int, int]]]
+AdjacencyList = list[list[tuple[int, int]]]
 
 
 def label_facets(image: np.ndarray) -> tuple[np.ndarray, list[int], np.ndarray]:
@@ -113,7 +113,7 @@ def compute_adjacency_list(
     and edge weights are shared boundary lengths between facets.
     """
     height, width = image.shape
-    boundary_counts: dict[tuple[int, int], int] = defaultdict(int)
+    boundary_counts: dict[tuple[int, int], int] = defaultdict[tuple[int, int], int](int)
     
     if width > 1:
         left = image[:, :-1]
@@ -135,9 +135,9 @@ def compute_adjacency_list(
         for (a, b), count in zip(unique_pairs, counts):
             boundary_counts[(int(a), int(b))] += int(count)
     
-    adjacency_list: AdjacencyList = [[] for _ in range(num_facets + 1)]
+    adjacency_list: AdjacencyList = [[] for _ in range(num_facets)]
     for (a, b), length in boundary_counts.items():
-        if 1 <= a <= num_facets and 1 <= b <= num_facets:
+        if 0 <= a < num_facets and 0 <= b < num_facets:
             adjacency_list[a].append((b, length))
             adjacency_list[b].append((a, length))
     
@@ -166,10 +166,17 @@ def compute_merge_targets(
 
         best_neighbor, best_len = None, -1
         for neighbor_id, boundary_len in neighbours_info:
-            if neighbor_id >= facet_id:
+            if neighbor_id == facet_id:
                 continue
-            if boundary_len > best_len:
+            if neighbor_id not in merge_ids_set and boundary_len > best_len:
                 best_neighbor, best_len = neighbor_id, boundary_len
+
+        if best_neighbor is None:
+            for neighbor_id, boundary_len in neighbours_info:
+                if neighbor_id == facet_id:
+                    continue
+                if boundary_len > best_len:
+                    best_neighbor, best_len = neighbor_id, boundary_len
 
         if best_neighbor is not None:
             merge_target[facet_id] = best_neighbor
@@ -181,13 +188,13 @@ def _apply_merges(
     image: np.ndarray,
     facet_colors: np.ndarray,
     merge_target: dict[int, int],
-) -> np.ndarray:
+) -> tuple[np.ndarray, np.ndarray]:
     """
-    Apply merge decisions to produce a new RGB image.
+    Apply merge decisions to produce a new RGB image and the updated facet ids.
     """
 
     def find_root(facet_id: int) -> int:
-        seen = set()
+        seen = set[Any]()
         while facet_id in merge_target and facet_id not in seen:
             seen.add(facet_id)
             facet_id = merge_target[facet_id]
@@ -195,12 +202,15 @@ def _apply_merges(
 
     num_facets = facet_colors.shape[0]
     final_facet_colors = facet_colors.copy()
+    id_map = np.arange(num_facets, dtype=np.int32)
     for facet_id in range(num_facets):
         root = find_root(facet_id)
+        id_map[facet_id] = root
         final_facet_colors[facet_id] = facet_colors[root]
 
+    final_labels = id_map[image]
     final_array = final_facet_colors[image]
-    return final_array.astype(np.uint8)
+    return final_array.astype(np.uint8), final_labels.astype(np.int32)
 
 
 def compute_small_facet_ids(
@@ -210,7 +220,7 @@ def compute_small_facet_ids(
     """
     Return facet ids whose size is below the given threshold.
     """    
-    return [idx for idx, sz in enumerate(facet_sizes) if sz < min_facet_size]
+    return [idx for idx, sz in enumerate[int](facet_sizes) if sz < min_facet_size]
 
 
 def compute_narrow_facet_ids(
@@ -240,15 +250,15 @@ def merge_facets(
     image: np.ndarray,
     facet_sizes: list[int],
     facet_colors: np.ndarray,
-) -> np.ndarray:
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Merge connected regions (facets) of equal color into neighbouring facets
-    using a simple region adjacency graph (RAG).
+    using a simple region adjacency graph (RAG). Returns the merged RGB image
+    and the updated facet id map.
 
     Facets listed in `merge_facet_ids` are merged into neighbouring facets
     chosen by maximum shared boundary length.
     """
-    merge_ids_set = set(merge_facet_ids)
     adjacency = compute_adjacency_list(image, num_facets=len(facet_sizes))
     merge_target = compute_merge_targets(facet_sizes, adjacency, merge_facet_ids)
     return _apply_merges(image, facet_colors, merge_target)

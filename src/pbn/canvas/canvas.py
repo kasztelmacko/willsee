@@ -1,15 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import time
-
 import numpy as np
 from PIL import Image
 
 from sklearn.cluster import KMeans
 
-from pbn.canvas.facet import Facet
-from pbn.canvas.color_palette import ColorPalette
 from pbn.canvas.utils.merge_facets import (
     label_facets,
     merge_facets,
@@ -32,6 +28,7 @@ class Canvas:
     prepared_image: np.ndarray
     clustered_image: np.ndarray
     processed_image: np.ndarray
+    processed_facets: np.ndarray
     outlined_image: np.ndarray
 
     @classmethod
@@ -42,35 +39,14 @@ class Canvas:
         canvas_page_size: str,
         n_colors: int
     ) -> Canvas:
-        start_total = time.perf_counter()
-        
-        t0 = time.perf_counter()
         prepared_image = cls._prepare_image(
             image=input_image,
             canvas_orientation=canvas_orientation,
             canvas_page_size=canvas_page_size
         )
-        t1 = time.perf_counter()
-        print(f"Image preparation: {t1 - t0:.3f}s")
-        
-        t0 = time.perf_counter()
         clustered_image = cls._cluster_image(image=prepared_image, n_colors=n_colors)
-        t1 = time.perf_counter()
-        print(f"KMeans clustering: {t1 - t0:.3f}s")
-        
-        t0 = time.perf_counter()
-        processed_image = cls._process_image(image=clustered_image)
-        t1 = time.perf_counter()
-        print(f"Image processing: {t1 - t0:.3f}s")
-        
-        t0 = time.perf_counter()
+        processed_image, processed_facets = cls._process_image(image=clustered_image)
         outlined_image = cls._outline_image(image=processed_image)
-        t1 = time.perf_counter()
-        print(f"Image outlining: {t1 - t0:.3f}s")
-        
-        end_total = time.perf_counter()
-        print(f"\nTotal execution time: {end_total - start_total:.3f}s")
-        print("=" * 50)
 
         return cls(
             input_image=input_image,
@@ -80,6 +56,7 @@ class Canvas:
             prepared_image=prepared_image,
             clustered_image=clustered_image,
             processed_image=processed_image,
+            processed_facets=processed_facets,
             outlined_image=outlined_image,
         )
 
@@ -114,80 +91,59 @@ class Canvas:
         return clustered_rgb_image
 
     @staticmethod
-    def _process_image(image: np.ndarray) -> np.ndarray:
+    def _process_image(image: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """
         Process clustered image by:
         1. Finding small facets and merging them
         2. Finding narrow facets and merging them
-
+        3. Reindex facets to start at 0
         """
-        t_small_start = time.perf_counter()
-        small_merged_array = Canvas._process_small_facets(image=image, min_facet_size=MIN_FACET_PIXELS_SIZE)
-        t_small_end = time.perf_counter()
-        print(f"  Small facet processing: {t_small_end - t_small_start:.3f}s")
+        small_merged_array, small_facets  = Canvas._process_small_facets(
+            image=image,
+            min_facet_size=MIN_FACET_PIXELS_SIZE
+        )
+        narrow_merged_array, narrow_facets = Canvas._process_narrow_facets(
+            image=small_merged_array,
+            narrow_thresh_px=NARROW_FACET_THRESHOLD_PX
+        )
+
+        _, dense_inverse = np.unique(narrow_facets, return_inverse=True)
         
-        t_narrow_start = time.perf_counter()
-        narrow_merged_array = Canvas._process_narrow_facets(image=small_merged_array, narrow_thresh_px=NARROW_FACET_THRESHOLD_PX)
-        t_narrow_end = time.perf_counter()
-        print(f"  Narrow facet processing: {t_narrow_end - t_narrow_start:.3f}s")
-        
-        return narrow_merged_array
+        return narrow_merged_array, dense_inverse.reshape(narrow_facets.shape).astype(np.int32)
 
     @staticmethod
     def _outline_image(image: np.ndarray) -> np.ndarray:
         return image
 
     @staticmethod
-    def _process_small_facets(image: np.ndarray, min_facet_size: int) -> np.ndarray:
-        t0 = time.perf_counter()
+    def _process_small_facets(image: np.ndarray, min_facet_size: int) -> tuple[np.ndarray, np.ndarray]:
         facets_img, facet_sizes, facet_colors = label_facets(image=image)
-        t1 = time.perf_counter()
-        print(f"    - Labeling facets: {t1 - t0:.3f}s")
-        
-        t0 = time.perf_counter()
         small_facet_ids = compute_small_facet_ids(
             facet_sizes=facet_sizes,
             min_facet_size=min_facet_size
         )
-        t1 = time.perf_counter()
-        print(f"    - Finding small facets: {t1 - t0:.3f}s")
-        
-        t0 = time.perf_counter()
-        merged_array = merge_facets(
+        merged_array, merged_facets = merge_facets(
             image=facets_img,
             facet_sizes=facet_sizes,
             facet_colors=facet_colors,
             merge_facet_ids=small_facet_ids,
         )
-        t1 = time.perf_counter()
-        print(f"    - Merging small facets: {t1 - t0:.3f}s")
         
-        return merged_array
+        return merged_array, merged_facets
 
     @staticmethod
-    def _process_narrow_facets(image: np.ndarray, narrow_thresh_px: int) -> np.ndarray:
-        t0 = time.perf_counter()
+    def _process_narrow_facets(image: np.ndarray, narrow_thresh_px: int) -> tuple[np.ndarray, np.ndarray]:
         facets_img, facet_sizes, facet_colors = label_facets(image=image)
-        t1 = time.perf_counter()
-        print(f"    - Labeling facets: {t1 - t0:.3f}s")
-        
-        t0 = time.perf_counter()
         narrow_facet_ids = compute_narrow_facet_ids(
             image=facets_img,
             facet_sizes=facet_sizes,
             narrow_thresh_px=narrow_thresh_px,
         )
-        t1 = time.perf_counter()
-        print(f"    - Finding narrow facets: {t1 - t0:.3f}s")
-        
-        t0 = time.perf_counter()
-        merged_array = merge_facets(
+        merged_array, merged_facets = merge_facets(
             image=facets_img,
             facet_sizes=facet_sizes,
             facet_colors=facet_colors,
             merge_facet_ids=narrow_facet_ids,
         )
-        t1 = time.perf_counter()
-        print(f"    - Merging narrow facets: {t1 - t0:.3f}s")
         
-        return merged_array
+        return merged_array, merged_facets
