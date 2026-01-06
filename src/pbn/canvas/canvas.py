@@ -7,10 +7,19 @@ from PIL import Image
 from pbn.canvas.canvas_utils.cluster_image import cluster_image
 from pbn.canvas.canvas_utils.prepare_image import prepare_image
 from pbn.canvas.canvas_utils.process_image import process_image
-from pbn.canvas.canvas_utils.outline_image import create_outline_mask, create_image_outline
+from pbn.canvas.canvas_utils.outline_image import (
+    create_outline_mask,
+    create_image_outline,
+    create_image_with_color_labels,
+)
 from pbn.config.pbn_config import (
     MIN_FACET_PIXELS_SIZE, 
-    NARROW_FACET_THRESHOLD_PX
+    NARROW_FACET_THRESHOLD_PX,
+    MIN_FONT_PX,
+    MAX_FONT_PX,
+    FONT_SCALE,
+    FACET_LABEL_COLOR,
+    FACET_OUTLINE_COLOR
 )
 
 @dataclass(frozen=True)
@@ -23,7 +32,6 @@ class Canvas:
     prepared_image: np.ndarray
     clustered_image: np.ndarray
     processed_image: np.ndarray
-    processed_facets: np.ndarray
     outlined_image: np.ndarray
 
     @classmethod
@@ -40,7 +48,7 @@ class Canvas:
             canvas_page_size=canvas_page_size
         )
         clustered_image = cls._cluster_image(image=prepared_image, n_colors=n_colors)
-        processed_image, processed_facets = cls._process_image(image=clustered_image)
+        processed_image = cls._process_image(image=clustered_image)
         outlined_image = cls._outline_image(image=processed_image)
 
         return cls(
@@ -51,7 +59,6 @@ class Canvas:
             prepared_image=prepared_image,
             clustered_image=clustered_image,
             processed_image=processed_image,
-            processed_facets=processed_facets,
             outlined_image=outlined_image,
         )
 
@@ -76,7 +83,7 @@ class Canvas:
         return cluster_image(image=image, n_colors=n_colors)
 
     @staticmethod
-    def _process_image(image: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def _process_image(image: np.ndarray) -> np.ndarray:
         """
         Process clustered image by:
         1. Finding small facets and merging them
@@ -92,5 +99,17 @@ class Canvas:
     @staticmethod
     def _outline_image(image: np.ndarray) -> np.ndarray:
         outline_mask = create_outline_mask(image=image)
-        outline_image = create_image_outline(image=image, outline_mask=outline_mask, outline_color=(0, 0, 0))
-        return outline_image
+        outline_image = create_image_outline(
+            image=image,
+            outline_mask=outline_mask,
+            outline_color=FACET_OUTLINE_COLOR,
+        )
+        # return outline_image
+        return create_image_with_color_labels(
+            image=image,
+            outline_image=outline_image,
+            min_font_px=MIN_FONT_PX,
+            max_font_px=MAX_FONT_PX,
+            font_scale=FONT_SCALE,
+            text_color=FACET_LABEL_COLOR,
+        )

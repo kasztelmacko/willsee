@@ -1,14 +1,3 @@
-"""
-FACET_SIZE_FONT_SIZE_CONFIG: config to determine facet label point font size based on facet size.
-    Config format: {font_size: (min_size, max_size)}, where None in max_size means infinity.
-"""
-
-FACET_SIZE_FONT_SIZE_CONFIG = {
-    8: (0, 50),
-    12: (51, 200),
-    16: (200, None),
-}
-
 CANVAS_SIZE_CONFIG = {
     "A4": {
         "LANDSCAPE": {
@@ -24,3 +13,9 @@ CANVAS_SIZE_CONFIG = {
 
 MIN_FACET_PIXELS_SIZE = 50
 NARROW_FACET_THRESHOLD_PX = 10
+
+MIN_FONT_PX = 8
+MAX_FONT_PX = 20
+FONT_SCALE = 0.5
+FACET_LABEL_COLOR = (0, 0, 0)
+FACET_OUTLINE_COLOR = (0, 0, 0)

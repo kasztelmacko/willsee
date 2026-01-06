@@ -30,7 +30,6 @@ canvas = Canvas.create_canvas(
 
 processed_facets_img = canvas.processed_image
 print(f"\nProcessed image shape: {processed_facets_img.shape}")
-print(f"Unique facet ids (processed): {np.unique(canvas.processed_facets).size}")
 
 processed_path = Path("data/input_image/processed_canvas.png")
 

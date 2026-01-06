@@ -11,7 +11,7 @@ def process_image(
     image: np.ndarray,
     min_facet_size: int,
     narrow_thresh_px: int,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> np.ndarray:
     """
     Process clustered image by:
     1. Finding small facets and merging them
@@ -19,15 +19,12 @@ def process_image(
     3. Reindexing facet ids to a compact 0..N-1 range
     """
     small_merged_array, _ = process_small_facets(image=image, min_facet_size=min_facet_size)
-    narrow_merged_array, narrow_facets = process_narrow_facets(
+    narrow_merged_array, _ = process_narrow_facets(
         image=small_merged_array,
         narrow_thresh_px=narrow_thresh_px,
     )
 
-    _, dense_inverse = np.unique(narrow_facets, return_inverse=True)
-    dense_facets = dense_inverse.reshape(narrow_facets.shape).astype(np.int32)
-
-    return narrow_merged_array, dense_facets
+    return narrow_merged_array
 
 
 def process_small_facets(image: np.ndarray, min_facet_size: int) -> tuple[np.ndarray, np.ndarray]:
