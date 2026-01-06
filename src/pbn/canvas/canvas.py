@@ -30,6 +30,10 @@ class Canvas:
     processed_image: np.ndarray
     outlined_image: np.ndarray
 
+    color_pallete: dict[int, tuple[int, int, int]]
+
+    color_pallete: dict[int, tuple[int, int, int]]
+
     @classmethod
     def create_canvas(
         cls,
@@ -50,7 +54,7 @@ class Canvas:
         )
         clustered_image = cls._cluster_image(image=prepared_image, n_colors=n_colors)
         processed_image = cls._process_image(image=clustered_image)
-        outlined_image = cls._outline_image(image=processed_image)
+        outlined_image, color_pallete = cls._outline_image(image=processed_image)
 
         return cls(
             input_image=input_image,
@@ -61,6 +65,7 @@ class Canvas:
             clustered_image=clustered_image,
             processed_image=processed_image,
             outlined_image=outlined_image,
+            color_pallete=color_pallete,
         )
 
 
@@ -103,7 +108,7 @@ class Canvas:
         )
 
     @staticmethod
-    def _outline_image(image: np.ndarray) -> np.ndarray:
+    def _outline_image(image: np.ndarray) -> tuple[np.ndarray, dict[int, tuple[int, int, int]]]:
         """
         Produce an outlined version of the processed image and render palette labels
         at facet centers onto the outline.
@@ -114,7 +119,7 @@ class Canvas:
             outline_mask=outline_mask,
             outline_color=PBN_CONF.FACET_OUTLINE_COLOR,
         )
-        return create_image_with_color_labels(
+        outline_image, color_palette = create_image_with_color_labels(
             image=image,
             outline_image=outline_image,
             min_font_px=PBN_CONF.MIN_FONT_PX,
@@ -122,3 +127,4 @@ class Canvas:
             font_scale=PBN_CONF.FONT_SCALE,
             text_color=PBN_CONF.FACET_LABEL_COLOR,
         )
+        return outline_image, color_palette

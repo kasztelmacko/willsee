@@ -33,6 +33,8 @@ print(f"\nProcessed image shape: {processed_facets_img.shape}")
 
 processed_path = Path("data/input_image/processed_canvas.png")
 
+print(canvas.color_pallete)
+
 Image.fromarray(processed_facets_img, mode="RGB").save(processed_path)
 
 Image.fromarray(canvas.outlined_image, mode="RGB").save("data/input_image/processed_canvas_outlined.png")

@@ -108,13 +108,16 @@ def compute_facets_properties(
     return facet_centers, facet_font_sizes, facet_colors
 
 
-def _map_palette_indices(facet_colors: np.ndarray) -> list[int]:
+def _map_palette_indices(facet_colors: np.ndarray) -> tuple[list[int], dict[int, tuple[int, int, int]]]:
     """
-    Map each facet's RGB color to a deterministic palette index (1-based).
+    Map each facet's RGB color to a deterministic palette index (1-based) and
+    return the palette mapping.
     """
     unique_colors = sorted({tuple(color.tolist()) for color in facet_colors})
-    color_to_idx = {color: idx + 1 for idx, color in enumerate(unique_colors)}
-    return [color_to_idx[tuple(color.tolist())] for color in facet_colors]
+    color_palette = {idx + 1: color for idx, color in enumerate(unique_colors)}
+    color_to_idx = {color: idx for idx, color in color_palette.items()}
+    indices = [color_to_idx[tuple(color.tolist())] for color in facet_colors]
+    return indices, color_palette
 
 
 def _load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
@@ -134,7 +137,7 @@ def create_image_with_color_labels(
     max_font_px: int,
     font_scale: float,
     text_color: tuple[int, int, int],
-) -> np.ndarray:
+) -> tuple[np.ndarray, dict[int, tuple[int, int, int]]]:
     """
     Render palette indices at facet centers onto a provided base image.
 
@@ -149,7 +152,7 @@ def create_image_with_color_labels(
         max_font_px=max_font_px,
         font_scale=font_scale,
     )
-    palette_indices = _map_palette_indices(facet_colors)
+    palette_indices, color_palette = _map_palette_indices(facet_colors)
 
     labeled_outline_image = outline_image.copy()
     labeled_outline_image = Image.fromarray(labeled_outline_image, mode="RGB")
@@ -165,4 +168,4 @@ def create_image_with_color_labels(
         font = _load_font(font_size)
         draw.text((cx, cy), str(label), fill=text_color, font=font, anchor="mm")
 
-    return np.array(labeled_outline_image, dtype=outline_image.dtype)
+    return np.array(labeled_outline_image, dtype=outline_image.dtype), color_palette
