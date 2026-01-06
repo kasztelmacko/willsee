@@ -16,6 +16,10 @@ import pbn.config.pbn_config as PBN_CONF
 
 @dataclass(frozen=True)
 class Canvas:
+    """
+    Pipeline container for preparing, clustering, processing, outlining, and labeling
+    an input image for paint-by-number generation.
+    """
     input_image: Image
     canvas_orientation: str
     canvas_page_size: str
@@ -34,6 +38,10 @@ class Canvas:
         canvas_page_size: str,
         n_colors: int
     ) -> Canvas:
+        """
+        End-to-end constructor that prepares, clusters, processes, outlines, and labels
+        the input image according to the configured canvas parameters.
+        """
         prepared_image = cls._prepare_image(
             image=input_image,
             canvas_orientation=canvas_orientation,
@@ -63,6 +71,9 @@ class Canvas:
         canvas_page_size: str,
         canvas_size_config: dict
     ) -> np.ndarray:
+        """
+        Resize and orient the input PIL image to the target canvas settings.
+        """
         return prepare_image(
             image=image,
             canvas_orientation=canvas_orientation,
@@ -93,6 +104,10 @@ class Canvas:
 
     @staticmethod
     def _outline_image(image: np.ndarray) -> np.ndarray:
+        """
+        Produce an outlined version of the processed image and render palette labels
+        at facet centers onto the outline.
+        """
         outline_mask = create_outline_mask(image=image)
         outline_image = create_image_outline(
             image=image,
