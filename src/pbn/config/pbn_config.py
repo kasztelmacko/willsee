@@ -5,8 +5,8 @@ CANVAS_SIZE_CONFIG = {
             "HEIGHT": 1696
         },
         "PORTRAIT": {
-            "WIDTH": 1800,
-            "HEIGHT": 1272
+            "WIDTH": 1696,
+            "HEIGHT": 2400
         }
     }
 }

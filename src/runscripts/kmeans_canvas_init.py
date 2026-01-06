@@ -12,10 +12,10 @@ from pbn.canvas.canvas import Canvas  # noqa: E402
 
 N_CLUSTERS = 20
 CANVAS_PAGE_SIZE = "A4"
-CANVAS_ORIENTATION = "LANDSCAPE"
+CANVAS_ORIENTATION = "PORTRAIT"
 
 
-image_path = Path("data/input_image/2024082.jpg")
+image_path = Path("data/input_image/202408.jpg")
 
 with Image.open(image_path) as im:
     input_image = im.convert("RGB")
