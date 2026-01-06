@@ -12,15 +12,7 @@ from pbn.canvas.canvas_utils.outline_image import (
     create_image_outline,
     create_image_with_color_labels,
 )
-from pbn.config.pbn_config import (
-    MIN_FACET_PIXELS_SIZE, 
-    NARROW_FACET_THRESHOLD_PX,
-    MIN_FONT_PX,
-    MAX_FONT_PX,
-    FONT_SCALE,
-    FACET_LABEL_COLOR,
-    FACET_OUTLINE_COLOR
-)
+import pbn.config.pbn_config as PBN_CONF
 
 @dataclass(frozen=True)
 class Canvas:
@@ -45,7 +37,8 @@ class Canvas:
         prepared_image = cls._prepare_image(
             image=input_image,
             canvas_orientation=canvas_orientation,
-            canvas_page_size=canvas_page_size
+            canvas_page_size=canvas_page_size,
+            canvas_size_config=PBN_CONF.CANVAS_SIZE_CONFIG
         )
         clustered_image = cls._cluster_image(image=prepared_image, n_colors=n_colors)
         processed_image = cls._process_image(image=clustered_image)
@@ -67,12 +60,14 @@ class Canvas:
     def _prepare_image(
         image: Image, 
         canvas_orientation: str, 
-        canvas_page_size: str
+        canvas_page_size: str,
+        canvas_size_config: dict
     ) -> np.ndarray:
         return prepare_image(
             image=image,
             canvas_orientation=canvas_orientation,
             canvas_page_size=canvas_page_size,
+            canvas_size_config=canvas_size_config
         )
 
     @staticmethod
@@ -92,8 +87,8 @@ class Canvas:
         """
         return process_image(
             image=image,
-            min_facet_size=MIN_FACET_PIXELS_SIZE,
-            narrow_thresh_px=NARROW_FACET_THRESHOLD_PX,
+            min_facet_size=PBN_CONF.MIN_FACET_PIXELS_SIZE,
+            narrow_thresh_px=PBN_CONF.NARROW_FACET_THRESHOLD_PX,
         )
 
     @staticmethod
@@ -102,14 +97,13 @@ class Canvas:
         outline_image = create_image_outline(
             image=image,
             outline_mask=outline_mask,
-            outline_color=FACET_OUTLINE_COLOR,
+            outline_color=PBN_CONF.FACET_OUTLINE_COLOR,
         )
-        # return outline_image
         return create_image_with_color_labels(
             image=image,
             outline_image=outline_image,
-            min_font_px=MIN_FONT_PX,
-            max_font_px=MAX_FONT_PX,
-            font_scale=FONT_SCALE,
-            text_color=FACET_LABEL_COLOR,
+            min_font_px=PBN_CONF.MIN_FONT_PX,
+            max_font_px=PBN_CONF.MAX_FONT_PX,
+            font_scale=PBN_CONF.FONT_SCALE,
+            text_color=PBN_CONF.FACET_LABEL_COLOR,
         )

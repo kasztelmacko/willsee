@@ -49,26 +49,55 @@ def compute_facets_properties(
     """
     labels_img, facet_sizes, facet_colors = label_facets(image=image)
     h, w = labels_img.shape
-    num_facets = int(labels_img.max()) + 1
+    num_facets = len(facet_sizes)
 
     facet_centers: list[tuple[int, int]] = []
     facet_font_sizes: list[int] = []
 
+    y_min = np.full(num_facets, h, dtype=np.int32)
+    y_max = np.full(num_facets, -1, dtype=np.int32)
+    x_min = np.full(num_facets, w, dtype=np.int32)
+    x_max = np.full(num_facets, -1, dtype=np.int32)
+
+    ys, xs = np.nonzero(labels_img >= 0)
+    for y, x in zip(ys, xs):
+        fid = labels_img[y, x]
+        if 0 <= fid < num_facets:
+            if y < y_min[fid]:
+                y_min[fid] = y
+            if y > y_max[fid]:
+                y_max[fid] = y
+            if x < x_min[fid]:
+                x_min[fid] = x
+            if x > x_max[fid]:
+                x_max[fid] = x
+
     for facet_id in range(num_facets):
-        mask = labels_img == facet_id
-        if not np.any(mask):
+        if facet_sizes[facet_id] <= 0 or y_max[facet_id] < 0:
             facet_centers.append((0, 0))
             continue
 
-        dist = distance_transform_edt(mask)
+        y0 = max(y_min[facet_id], 0)
+        y1 = min(y_max[facet_id] + 1, h)
+        x0 = max(x_min[facet_id], 0)
+        x1 = min(x_max[facet_id] + 1, w)
+
+        local_mask = labels_img[y0:y1, x0:x1] == facet_id
+        padded = np.pad(local_mask, 1, constant_values=False)
+        dist = distance_transform_edt(padded)
         max_idx = int(np.argmax(dist))
         max_dist = dist.flat[max_idx]
-        y, x = divmod(max_idx, w)
+        py, px = divmod(max_idx, dist.shape[1])
+        y = y0 + py - 1
+        x = x0 + px - 1
 
         if max_dist <= 0:
-            ys, xs = np.nonzero(mask)
-            y = int(np.round(ys.mean()))
-            x = int(np.round(xs.mean()))
+            ys_local, xs_local = np.nonzero(local_mask)
+            y = int(np.round(ys_local.mean())) + y0
+            x = int(np.round(xs_local.mean())) + x0
+
+        y = int(np.clip(y, 0, h - 1))
+        x = int(np.clip(x, 0, w - 1))
 
         facet_centers.append((y, x))
 
@@ -126,8 +155,14 @@ def create_image_with_color_labels(
     labeled_outline_image = Image.fromarray(labeled_outline_image, mode="RGB")
     draw = ImageDraw.Draw(labeled_outline_image)
 
+    h, w, _ = outline_image.shape
+
     for (y, x), label, font_size in zip(facet_centers, palette_indices, facet_font_sizes):
+        margin = max(font_size // 2, 1)
+        cy = int(np.clip(y, margin, h - 1 - margin))
+        cx = int(np.clip(x, margin, w - 1 - margin))
+
         font = _load_font(font_size)
-        draw.text((int(x), int(y)), str(label), fill=text_color, font=font, anchor="mm")
+        draw.text((cx, cy), str(label), fill=text_color, font=font, anchor="mm")
 
     return np.array(labeled_outline_image, dtype=outline_image.dtype)
