@@ -1,18 +1,22 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import numpy as np
 from PIL import Image
 
 from pbn.canvas.canvas_utils.cluster_image import cluster_image
 from pbn.canvas.canvas_utils.prepare_image import prepare_image
-from pbn.canvas.canvas_utils.process_image import process_image
+from pbn.canvas.canvas_utils.process_image import (
+    process_image,
+    recolor_image_with_palette,
+)
 from pbn.canvas.canvas_utils.outline_image import (
     create_outline_mask,
     create_image_outline,
     create_image_with_color_labels,
 )
 import pbn.config.pbn_config as PBN_CONF
+from pbn.canvas.color_palette import ColorPalette
 
 @dataclass(frozen=True)
 class Canvas:
@@ -30,9 +34,7 @@ class Canvas:
     processed_image: np.ndarray
     outlined_image: np.ndarray
 
-    color_pallete: dict[int, tuple[int, int, int]]
-
-    color_pallete: dict[int, tuple[int, int, int]]
+    color_palette: ColorPalette
 
     @classmethod
     def create_canvas(
@@ -54,7 +56,10 @@ class Canvas:
         )
         clustered_image = cls._cluster_image(image=prepared_image, n_colors=n_colors)
         processed_image = cls._process_image(image=clustered_image)
-        outlined_image, color_pallete = cls._outline_image(image=processed_image)
+        outlined_image, color_palette = cls._outline_image(
+            image=processed_image,
+            palette=None,
+        )
 
         return cls(
             input_image=input_image,
@@ -65,7 +70,7 @@ class Canvas:
             clustered_image=clustered_image,
             processed_image=processed_image,
             outlined_image=outlined_image,
-            color_pallete=color_pallete,
+            color_palette=color_palette,
         )
 
 
@@ -108,7 +113,10 @@ class Canvas:
         )
 
     @staticmethod
-    def _outline_image(image: np.ndarray) -> tuple[np.ndarray, dict[int, tuple[int, int, int]]]:
+    def _outline_image(
+        image: np.ndarray,
+        palette: ColorPalette | None = None,
+    ) -> tuple[np.ndarray, ColorPalette]:
         """
         Produce an outlined version of the processed image and render palette labels
         at facet centers onto the outline.
@@ -126,5 +134,31 @@ class Canvas:
             max_font_px=PBN_CONF.MAX_FONT_PX,
             font_scale=PBN_CONF.FONT_SCALE,
             text_color=PBN_CONF.FACET_LABEL_COLOR,
+            palette=palette,
         )
         return outline_image, color_palette
+
+    def render_image_with_replaced_palette(self, palette: ColorPalette) -> "Canvas":
+        """
+        Return a new Canvas with processed and outlined images re-rendered
+        using the provided palette.
+        """
+        recolored_image = recolor_image_with_palette(
+            image=self.processed_image,
+            palette=palette,
+        )
+        outlined_image, updated_palette = self._outline_image(
+            image=recolored_image,
+            palette=palette,
+        )
+        return replace(
+            self,
+            processed_image=recolored_image,
+            outlined_image=outlined_image,
+            color_palette=updated_palette,
+        )
+
+    @property
+    def color_pallete(self) -> ColorPalette:
+        """Backward-compatible alias for `color_palette`."""
+        return self.color_palette

@@ -1,8 +1,11 @@
 from collections import defaultdict
-from typing import Any
+from typing import Any, Iterable, Hashable, TYPE_CHECKING
 
 import numpy as np
 from numba import njit
+
+if TYPE_CHECKING:
+    from pbn.canvas.color_palette import ColorPalette
 
 AdjacencyList = list[list[tuple[int, int]]]
 
@@ -315,3 +318,32 @@ def merge_facets(
     adjacency = compute_adjacency_list(image, num_facets=len(facet_sizes))
     merge_target = compute_merge_targets(facet_sizes, adjacency, merge_facet_ids)
     return _apply_merges(image, facet_colors, merge_target)
+
+
+def recolor_image_with_palette(
+    image: np.ndarray,
+    palette: "ColorPalette",
+) -> np.ndarray:
+    """
+    Recolor an image using the palette's current key->RGB mapping.
+
+    Any pixel whose color maps to a palette key is rewritten to that key's
+    current RGB value. Unknown colors are left unchanged.
+    """
+    recolored = image.copy()
+    color_to_key: dict[tuple[int, int, int], Hashable] = palette._color_to_key
+    palette_map: dict[Hashable, Iterable[int]] = palette.to_dict()
+
+    unique_colors = np.unique(image.reshape(-1, 3), axis=0)
+    for color_arr in unique_colors:
+        color_tuple = tuple(int(c) for c in color_arr.tolist())
+        key = color_to_key.get(color_tuple)
+        if key is None:
+            continue
+        target_rgb = palette_map.get(key)
+        if target_rgb is None or tuple(target_rgb) == color_tuple:
+            continue
+        mask = np.all(image == color_tuple, axis=2)
+        recolored[mask] = np.array(target_rgb, dtype=recolored.dtype)
+
+    return recolored

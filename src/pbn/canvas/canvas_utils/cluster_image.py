@@ -2,7 +2,7 @@ import numpy as np
 from sklearn.cluster import KMeans
 
 
-def cluster_image(image: np.ndarray, n_colors: int, random_state: int = 42) -> np.ndarray:
+def cluster_image(image: np.ndarray, n_colors: int, random_state: int = 0) -> np.ndarray:
     """
     Cluster an RGB image into `n_colors` using KMeans and return the
     clustered RGB image.

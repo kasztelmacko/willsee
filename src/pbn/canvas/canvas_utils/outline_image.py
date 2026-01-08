@@ -3,6 +3,7 @@ from PIL import Image, ImageDraw, ImageFont
 from scipy.ndimage import distance_transform_edt
 
 from pbn.canvas.canvas_utils.process_image import label_facets
+from pbn.canvas.color_palette import ColorPalette
 
 
 def create_outline_mask(image: np.ndarray) -> np.ndarray:
@@ -108,18 +109,6 @@ def compute_facets_properties(
     return facet_centers, facet_font_sizes, facet_colors
 
 
-def _map_palette_indices(facet_colors: np.ndarray) -> tuple[list[int], dict[int, tuple[int, int, int]]]:
-    """
-    Map each facet's RGB color to a deterministic palette index (1-based) and
-    return the palette mapping.
-    """
-    unique_colors = sorted({tuple(color.tolist()) for color in facet_colors})
-    color_palette = {idx + 1: color for idx, color in enumerate(unique_colors)}
-    color_to_idx = {color: idx for idx, color in color_palette.items()}
-    indices = [color_to_idx[tuple(color.tolist())] for color in facet_colors]
-    return indices, color_palette
-
-
 def _load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     """
     Try to load a TrueType font; fall back to Pillow's default bitmap font.
@@ -137,7 +126,8 @@ def create_image_with_color_labels(
     max_font_px: int,
     font_scale: float,
     text_color: tuple[int, int, int],
-) -> tuple[np.ndarray, dict[int, tuple[int, int, int]]]:
+    palette: ColorPalette | None = None,
+) -> tuple[np.ndarray, ColorPalette]:
     """
     Render palette indices at facet centers onto a provided base image.
 
@@ -152,7 +142,9 @@ def create_image_with_color_labels(
         max_font_px=max_font_px,
         font_scale=font_scale,
     )
-    palette_indices, color_palette = _map_palette_indices(facet_colors)
+
+    active_palette = palette or ColorPalette.from_facet_colors(facet_colors)
+    palette_labels = active_palette.labels_for_colors(facet_colors)
 
     labeled_outline_image = outline_image.copy()
     labeled_outline_image = Image.fromarray(labeled_outline_image, mode="RGB")
@@ -160,7 +152,7 @@ def create_image_with_color_labels(
 
     h, w, _ = outline_image.shape
 
-    for (y, x), label, font_size in zip(facet_centers, palette_indices, facet_font_sizes):
+    for (y, x), label, font_size in zip(facet_centers, palette_labels, facet_font_sizes):
         margin = max(font_size // 2, 1)
         cy = int(np.clip(y, margin, h - 1 - margin))
         cx = int(np.clip(x, margin, w - 1 - margin))
@@ -168,4 +160,4 @@ def create_image_with_color_labels(
         font = _load_font(font_size)
         draw.text((cx, cy), str(label), fill=text_color, font=font, anchor="mm")
 
-    return np.array(labeled_outline_image, dtype=outline_image.dtype), color_palette
+    return np.array(labeled_outline_image, dtype=outline_image.dtype), active_palette
