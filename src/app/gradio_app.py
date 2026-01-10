@@ -1,4 +1,5 @@
 """Gradio interface for generating paint-by-number canvases."""
+from __future__ import annotations
 from pathlib import Path
 import sys
 src_path = Path(__file__).parent.parent
@@ -8,7 +9,6 @@ if str(src_path) not in sys.path:
 from pbn.canvas.canvas import Canvas
 import pbn.config.pbn_config as PBN_CONF
 
-from __future__ import annotations
 
 import gradio as gr
 from PIL import Image
@@ -18,6 +18,46 @@ from PIL import Image
 DEFAULT_PAGE_SIZE = "A4"
 DEFAULT_ORIENTATION = "LANDSCAPE"
 DEFAULT_N_COLORS = 15
+
+
+def _rgb_to_hex(rgb: tuple[int, int, int]) -> str:
+    r, g, b = (int(c) for c in rgb)
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _parse_color_to_rgb(
+    color_value: str | tuple[int, int, int] | list[int],
+) -> tuple[int, int, int]:
+    def _clamp(value: float) -> int:
+        return max(0, min(255, int(round(value))))
+
+    stripped = color_value.strip()
+    if stripped.startswith(("rgba(", "rgb(")):
+        try:
+            r, g, b, *_ = (float(c.strip()) for c in stripped[stripped.index("(") + 1 : stripped.index(")")].split(","))
+            return tuple[int, ...](_clamp(c) for c in (r, g, b))
+        except Exception:
+            pass
+
+    hex_value = stripped.lstrip("#")
+    if len(hex_value) == 3:
+        hex_value = "".join(ch * 2 for ch in hex_value)
+    if len(hex_value) in (6, 8):
+        try:
+            return tuple[int, ...](_clamp(int(hex_value[i : i + 2], 16)) for i in (0, 2, 4))
+        except Exception:
+            pass
+
+    raise gr.Error("Invalid color value. Please select a valid color.")
+
+
+DEFAULT_MIN_FACET_SIZE = PBN_CONF.MIN_FACET_PIXELS_SIZE
+DEFAULT_NARROW_FACET_THRESHOLD = PBN_CONF.NARROW_FACET_THRESHOLD_PX
+DEFAULT_MIN_FONT_PX = PBN_CONF.MIN_FONT_PX
+DEFAULT_MAX_FONT_PX = PBN_CONF.MAX_FONT_PX
+DEFAULT_FONT_SCALE = PBN_CONF.FONT_SCALE
+DEFAULT_FACET_LABEL_COLOR_HEX = _rgb_to_hex(PBN_CONF.FACET_LABEL_COLOR)
+DEFAULT_FACET_OUTLINE_COLOR_HEX = _rgb_to_hex(PBN_CONF.FACET_OUTLINE_COLOR)
 
 
 def _orientations_from_config(config: dict[str, dict[str, dict]]) -> list[str]:
@@ -43,9 +83,38 @@ def generate_canvas(
     canvas_orientation: str = DEFAULT_ORIENTATION,
     canvas_page_size: str = DEFAULT_PAGE_SIZE,
     n_colors: int = DEFAULT_N_COLORS,
+    min_facet_size: int = DEFAULT_MIN_FACET_SIZE,
+    narrow_thresh_px: int = DEFAULT_NARROW_FACET_THRESHOLD,
+    min_font_px: int = DEFAULT_MIN_FONT_PX,
+    max_font_px: int = DEFAULT_MAX_FONT_PX,
+    font_scale: float = DEFAULT_FONT_SCALE,
+    facet_label_color: str | tuple[int, int, int] = DEFAULT_FACET_LABEL_COLOR_HEX,
+    facet_outline_color: str | tuple[int, int, int] = DEFAULT_FACET_OUTLINE_COLOR_HEX,
 ):
     """Run the Canvas pipeline and return processed and outlined images."""
     _validate_page_orientation(canvas_page_size, canvas_orientation)
+
+    min_facet_size = int(min_facet_size)
+    narrow_thresh_px = int(narrow_thresh_px)
+    min_font_px = int(min_font_px)
+    max_font_px = int(max_font_px)
+    font_scale = float(font_scale)
+
+    if min_facet_size < 1 or narrow_thresh_px < 1:
+        raise gr.Error("Facet thresholds must be positive integers.")
+    if min_font_px < 1 or max_font_px < 1:
+        raise gr.Error("Font sizes must be positive integers.")
+    if min_font_px > max_font_px:
+        raise gr.Error("Min font size cannot exceed max font size.")
+    if font_scale <= 0:
+        raise gr.Error("Font scale must be greater than zero.")
+
+    label_color_rgb = _parse_color_to_rgb(
+        color_value=facet_label_color,
+    )
+    outline_color_rgb = _parse_color_to_rgb(
+        color_value=facet_outline_color,
+    )
 
     rgb_image = image.convert("RGB")
     canvas = Canvas.create_canvas(
@@ -53,6 +122,13 @@ def generate_canvas(
         canvas_orientation=canvas_orientation,
         canvas_page_size=canvas_page_size,
         n_colors=int(n_colors),
+        min_facet_size=min_facet_size,
+        narrow_thresh_px=narrow_thresh_px,
+        min_font_px=min_font_px,
+        max_font_px=max_font_px,
+        font_scale=font_scale,
+        facet_label_color=label_color_rgb,
+        facet_outline_color=outline_color_rgb,
     )
     return canvas.processed_image, canvas.outlined_image
 
@@ -85,6 +161,50 @@ with gr.Blocks(title="Paint-by-Number Canvas") as demo:
                 value=DEFAULT_N_COLORS,
                 label="Number of colors (clusters)",
             )
+            with gr.Accordion("Advanced canvas parameters", open=False):
+                min_facet_slider = gr.Slider(
+                    minimum=1,
+                    maximum=500,
+                    step=1,
+                    value=DEFAULT_MIN_FACET_SIZE,
+                    label="Minimum facet size (pixels)",
+                )
+                narrow_thresh_slider = gr.Slider(
+                    minimum=1,
+                    maximum=100,
+                    step=1,
+                    value=DEFAULT_NARROW_FACET_THRESHOLD,
+                    label="Narrow facet threshold (pixels)",
+                )
+                min_font_slider = gr.Slider(
+                    minimum=4,
+                    maximum=100,
+                    step=1,
+                    value=DEFAULT_MIN_FONT_PX,
+                    label="Min label font size (px)",
+                )
+                max_font_slider = gr.Slider(
+                    minimum=6,
+                    maximum=200,
+                    step=1,
+                    value=DEFAULT_MAX_FONT_PX,
+                    label="Max label font size (px)",
+                )
+                font_scale_slider = gr.Slider(
+                    minimum=0.1,
+                    maximum=3.0,
+                    step=0.05,
+                    value=DEFAULT_FONT_SCALE,
+                    label="Label font scale multiplier",
+                )
+                label_color_picker = gr.ColorPicker(
+                    value=DEFAULT_FACET_LABEL_COLOR_HEX,
+                    label="Facet label color",
+                )
+                outline_color_picker = gr.ColorPicker(
+                    value=DEFAULT_FACET_OUTLINE_COLOR_HEX,
+                    label="Facet outline color",
+                )
             generate_btn = gr.Button("Generate canvas")
         with gr.Column():
             processed_output = gr.Image(
@@ -97,7 +217,19 @@ with gr.Blocks(title="Paint-by-Number Canvas") as demo:
             )
     generate_btn.click(
         fn=generate_canvas,
-        inputs=[input_image, orientation_dropdown, page_dropdown, n_colors_slider],
+        inputs=[
+            input_image,
+            orientation_dropdown,
+            page_dropdown,
+            n_colors_slider,
+            min_facet_slider,
+            narrow_thresh_slider,
+            min_font_slider,
+            max_font_slider,
+            font_scale_slider,
+            label_color_picker,
+            outline_color_picker,
+        ],
         outputs=[processed_output, outlined_output],
     )
 

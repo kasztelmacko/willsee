@@ -3,12 +3,6 @@ from __future__ import annotations
 from typing import Hashable, Iterable, Mapping
 
 
-def _normalize_color(color: Iterable[int]) -> tuple[int, int, int]:
-    """Convert arbitrary iterable (np array, list, tuple) into an RGB tuple of ints."""
-    r, g, b = color
-    return int(r), int(g), int(b)
-
-
 class ColorPalette:
     """
     Mutable palette that maps arbitrary keys (labels) to RGB colors and
@@ -76,3 +70,8 @@ class ColorPalette:
         """Get the RGB tuple for a given key."""
         return self._key_to_rgb[key]
 
+
+def _normalize_color(color: Iterable[int]) -> tuple[int, int, int]:
+    """Convert arbitrary iterable (np array, list, tuple) into an RGB tuple of ints."""
+    r, g, b = color
+    return int(r), int(g), int(b)
