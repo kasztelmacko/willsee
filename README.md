@@ -1,30 +1,22 @@
-## Image Facet Inspector
+## Paint By Numbers kit generation
+This Repo contains implementation of Paint By Numbers (PBN) kits from input image.
+- It provides a Canvas object, which in initialization performs all necessary processing and returns all taken steps.
+- It provides gradio app which adds a UI layer to the app, and makes it more usable
 
-A small prototype tool for inspecting clustered images. It allows you to click
-on a pixel and highlights the connected facet of pixels that have exactly the
-same RGB value as the clicked pixel (4-connected neighborhood flood fill).
 
-### How to run
-
-1. Install dependencies (if you use `uv`, from the project root you can run):
-
-```bash
-uv sync
+To start the app use 
+```
+uv run python src\app\gradio_app.py
 ```
 
-Or with plain `pip`:
+### Canvas object:
+Canvas object is the main object of the kit. It takes all the processing steps:
+1. Formating the input image for A4 format
+2. Performing KMeans clustering (contolled by **N_COLORS**)
+3. Removing small facets (controlled by **MIN_FACET_PIXELS_SIZE**)
+4. Removing narrow facets (controlled by **NARROW_FACET_THRESHOLD_PX**)
+5. Creating the outline image with labeled colors
 
-```bash
-pip install -e .[all]
-```
-
-2. From the project root, launch the inspector:
-
-```bash
-python -m inspect_tool.app
-```
-
-This starts a local Gradio web app in your browser. Click anywhere on the image
-to see the corresponding facet highlighted in red.
-
-
+### ColorPalette object:
+ColorPalette allows user to additionally rerender the processed image with adjusted color palette.
+After the initial Canvas is created it has the color_palette attribute, where we can change given color label, or color value.
