@@ -20,3 +20,7 @@ Canvas object is the main object of the kit. It takes all the processing steps:
 ### ColorPalette object:
 ColorPalette allows user to additionally rerender the processed image with adjusted color palette.
 After the initial Canvas is created it has the color_palette attribute, where we can change given color label, or color value.
+
+### Sample processed image:
+![image-1](https://github.com/user-attachments/assets/8a08ca1a-a078-430b-be17-865a2f58ceeb)
+![image-2](https://github.com/user-attachments/assets/a1d5a435-e9e6-40e2-88a8-b6768c751228)
